@@ -4,7 +4,7 @@ import numpy as np
 
 
 gripper_file = "127871-2017-10-24-20-48-Servo-displacement"
-labview_ndi_file = "131617-2017-10-28-13-34-10.txt"
+labview_ndi_file = "691960-2017-10-29-17-03-42.txt"
 
 class process_gripper_file:
 
@@ -71,7 +71,8 @@ class process_labview_file:
             raise IOError ("Unable to open NDI Labview file {}".format(some_file))
 
     def preprocess(self):
-
+    # preprocess cannot delete the lines based on NDI x-axis since 449 and 339 are in different position
+        max_x = -1000.0
         for line in self.lines[6:]:
             y = line.strip().split(",")
             del y[0]
