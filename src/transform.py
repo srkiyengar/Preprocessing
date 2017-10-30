@@ -11,7 +11,13 @@ q2_339 = [0.222542, 0.551251, 0.281243, 0.753326]
 
 object_origin = [195.30,23.96,-1886.08]
 
-labview_ndi_file = "691960-2017-10-29-17-03-42.txt-preprocessed"
+#pose and location when v1,q1 of 339 is at the bottom and v2,q2 of 449 at the center
+v1_339 = [203.19, -58.99, -1621.9]
+q1_339 = [0.7765, -0.2614, -0.5724, 0.032]
+v2_449 = [107.71, -127.45, -1699.52]
+q2_449 = [0.2803, -0.5491, 0.4564, -0.6415]
+
+labview_ndi_file = "131615-2017-10-28-13-33-29.txt-preprocessed"
 
 def rotmat_to_axis_angle(R):
 
@@ -85,7 +91,7 @@ def inverse_homogenous_transform(H):
     origin = -R.dot(origin)
     return homogenous_transform(R,list(origin.flatten()))
 
-def center_tool_339_to_gripper_frame():
+def center_tool_339_to_gripper_center():
 
     '''
     The y-axis of 339 is aligned with the y axis of the gripper. The z-axis of the 339 will require a rotation of 90
@@ -96,6 +102,25 @@ def center_tool_339_to_gripper_frame():
     '''
 
     d =[0.0,0.0,40.45,1.0]
+    H = np.zeros((4,4))
+    H.shape = (4,4)
+    H[:,3]= d
+    H[(1,0),(1,2)]=1
+    H[2,0]= -1
+    return H
+
+def center_tool_449_to_gripper_center():
+
+    '''
+    The y-axis of 4499 is aligned with the y axis of the gripper. The z-axis of the 449 will require a rotation of 90
+    (counter clockwise with respect to y R (y,90) to get align gripper z axis to outward pointing. the origin of the
+    449 needs to be moved in z-axis by + 35.36 (Not accurate) to get it to the origin of the gripper.
+    the accurate measure from Autodesk is XXXX
+
+    :return: homogenous transformation from 339 center to gripper center
+    '''
+
+    d =[0.0,0.0,35.36,1.0]
     H = np.zeros((4,4))
     H.shape = (4,4)
     H[:,3]= d
@@ -125,7 +150,33 @@ def static_transform_449_top(q1,v1,q2,v2):
     R2 = rotation_matrix_from_quaternions(q2)
     H2 = homogenous_transform(R2, v2)
 
-    H3 = center_tool_339_to_gripper_frame()
+    H3 = center_tool_339_to_gripper_center()
+    H = (h1.dot(H2)).dot(H3)
+    return H
+
+def static_transform_339_bottom(q1,v1,q2,v2):
+    '''
+
+    :param q1: unit quaternions representing the rotation of the frame of 339 tool at the bottom of the gripper
+    :param v1: vector representing the rotation of the frame of 339 tool
+    :param q2: unit quaternions representing the rotation of the frame of 449 tool at the center
+    :param v2: vector representing the rotation of the frame of 449
+    :return: homogenous tranformation
+    '''
+    # H1 -  Homogenous transform from reference NDI frame to front tool
+    # H2 -  Homogenous transform from reference NDI frame to center tool
+    # H3 -  Homogenous transformation from the center tool frame to center of the gripper with axis rotated where the y
+    # is parallel and between the two fingers and z is pointing outward
+
+
+    R1 = rotation_matrix_from_quaternions(q1)
+    H1 = homogenous_transform(R1, v1)
+    h1 = inverse_homogenous_transform(H1)
+
+    R2 = rotation_matrix_from_quaternions(q2)
+    H2 = homogenous_transform(R2, v2)
+
+    H3 = center_tool_449_to_gripper_center()
     H = (h1.dot(H2)).dot(H3)
     return H
 
@@ -138,14 +189,26 @@ def static_transform_object_reference(position_vector):
     H = homogenous_transform(R,position_vector)
     return H
 
+def save_processed_file(some_file,str_list):
+
+    try:
+        with open(some_file+"-transformed","w") as f:
+            for i in str_list:
+                i = i + "\n"
+                f.write(i)
+    except IOError,e:
+        print("While opening file for writing transformed{}".format(e))
+        raise IOError ("Unable to create file to save transformed gripper trajectorye")
 
 if __name__ == "__main__":
 
-    HT_gripper_center = static_transform_449_top(q1_449,v1_449,q2_339,v2_339)
+    HT_from449_to_gripper_center = static_transform_449_top(q1_449,v1_449,q2_339,v2_339)
     HT_object = static_transform_object_reference(object_origin)
-
+    HT_from339_to_gripper_center = static_transform_339_bottom(q1_339,v1_339,q2_449,v2_449)
     with open(labview_ndi_file) as f:
         lines = f.readlines()
+    processed_lines = []
+
 
     for line in lines:
         capture_time,tool = line.split(",")[0:2]
@@ -153,11 +216,28 @@ if __name__ == "__main__":
             x, y, z, qr, qi, qj, qk = map(float,(line.strip().split(",")[2:]))
             R = rotation_matrix_from_quaternions([qr, qi, qj, qk])
             H = homogenous_transform(R, [x, y, z])
-            H = H.dot(HT_gripper_center)            # pose and position of Gripper w.r.t NDI frame
+            H = H.dot(HT_from449_to_gripper_center)            # pose and position of Gripper Center w.r.t NDI frame
             H_origin = inverse_homogenous_transform(HT_object).dot(H)   # Gripper w.r.t to object frame
             R_origin = H_origin[0:3,0:3]
             Rx,Ry,Rz = rotmat_to_axis_angle(R_origin)
             x = H_origin[0,3]
             y = H_origin[1,3]
             z = H_origin[2,3]
-            print x,y,z,Rx,Ry,Rz
+            processed_lines.append(str(capture_time)+','+str(x)+','+str(y)+','+str(z)+','+str(Rx)+','
+                                   +str(Ry)+','+str(Rz))
+
+        elif (tool == "339"):
+            x, y, z, qr, qi, qj, qk = map(float,(line.strip().split(",")[2:]))
+            R = rotation_matrix_from_quaternions([qr, qi, qj, qk])
+            H = homogenous_transform(R, [x, y, z])
+            H = H.dot(HT_from339_to_gripper_center)            # pose and position of Gripper Center w.r.t NDI frame
+            H_origin = inverse_homogenous_transform(HT_object).dot(H)   # Gripper w.r.t to object frame
+            R_origin = H_origin[0:3,0:3]
+            Rx,Ry,Rz = rotmat_to_axis_angle(R_origin)
+            x = H_origin[0,3]
+            y = H_origin[1,3]
+            z = H_origin[2,3]
+            processed_lines.append(str(capture_time)+','+str(x)+','+str(y)+','+str(z)+','+str(Rx)+','
+                                   +str(Ry)+','+str(Rz))
+
+    save_processed_file(labview_ndi_file,processed_lines)

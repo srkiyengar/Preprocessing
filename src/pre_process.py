@@ -15,6 +15,7 @@ class process_gripper_file:
             with open(some_file) as f:
                 self.lines = f.readlines()
                 self.processed_lines = []
+                self.clock_difference = 0
         except IOError,e:
             print("Failure during opening gripper file {}".format(e))
             raise IOError ("Unable to open Gripper data file {}".format(some_file))
@@ -23,6 +24,8 @@ class process_gripper_file:
     def pre_process(self):
 
         max_val = 0
+        _,n = self.lines[1].split(':')
+        self.clock_difference = int(n)
 
         for line in self.lines[2:-4]:
             y = line.strip().split(",")
@@ -51,6 +54,8 @@ class process_gripper_file:
 
         try:
             with open(self.original_file+"-preprocessed","w") as f:
+                i = str(self.clock_difference)+"\n"
+                f.write(i)
                 for i in self.processed_lines:
                     i = i + "\n"
                     f.write(i)
@@ -114,12 +119,12 @@ class process_labview_file:
 
 if __name__=="__main__":
 
-    #p = process_gripper_file(gripper_file)
-    #p.pre_process()
-    #p.save_processed_file()
-    p = process_labview_file(labview_ndi_file)
-    p.preprocess()
+    p = process_gripper_file(gripper_file)
+    p.pre_process()
     p.save_processed_file()
+    #p = process_labview_file(labview_ndi_file)
+    #p.preprocess()
+    #p.save_processed_file()
 
     pass
 
